@@ -91,17 +91,19 @@ def write_mesh(m):
     open_class("Geode")
     write_indented("name \"%s\"" % m.name)
     # count the drawables
-    # draw each vertex group as a separate geometry
+    # draw each material as a separate geometry - but they all share the same vertex and normal lists
 
-    write_indented("num_drawables 1")
-    open_class("Geometry")
+    modified_mesh = m.to_mesh(current_scene, apply_modifiers, 'RENDER')
+    material_index = 0
 
-    write_indented("DataVariance STATIC")
+    write_indented("num_drawables %d" % len(m.material_slots))
 
-    # write the material
-    open_class("StateSet")
-    write_indented("DataVariance STATIC")
     for material_slot in m.material_slots:
+        open_class("Geometry")
+
+        # write the material
+        open_class("StateSet")
+
         open_class("Material")
         write_indented("name \"%s\"" % material_slot.name)
         
@@ -134,65 +136,56 @@ def write_mesh(m):
     
         close_class()
 
-    close_class()
+        close_class()
+        # write the primitives
+        num_tris = 0
+        num_quads = 0
+        num_primitives = 0
+        for face in modified_mesh.faces:
+            if len(face.vertices) == 3 and face.material_index == material_index:
+                num_tris += 1
+            elif len(face.vertices) == 4 and face.material_index == material_index:
+                num_quads += 1
+        if num_tris > 0:
+            num_primitives += 1
+        if num_quads > 0:
+            num_primitives += 1
+        open_class("PrimitiveSets %d" % num_primitives)
 
-    # write the vertices
-    modified_mesh = m.to_mesh(current_scene, apply_modifiers, 'RENDER')
+        # draw all the triangle faces
+        if num_tris > 0:
+            open_class("DrawElementsUShort TRIANGLES %d" % num_tris)
+            for face in modified_mesh.faces:
+                if len(face.vertices) == 3 and face.material_index == material_index:
+                    write_indented("%d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2]))
+            close_class()
+        # draw all the quad faces
+        if num_quads > 0:
+            open_class("DrawElementsUShort QUADS %d" % num_quads)
+            for face in modified_mesh.faces:
+                if len(face.vertices) == 4 and face.material_index == material_index:
+                    write_indented("%d %d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2], face.vertices[3]))
+            close_class()
 
-    open_class("VertexArray Vec3Array %d" % len(modified_mesh.vertices))
-    for vertex in modified_mesh.vertices:
-        write_indented("%f %f %f" % (vertex.co[0], vertex.co[1], vertex.co[2]))
+        close_class()
+
+        # write the vertices
+        open_class("VertexArray Vec3Array %d" % len(modified_mesh.vertices))
+        for vertex in modified_mesh.vertices:
+            write_indented("%f %f %f" % (vertex.co[0], vertex.co[1], vertex.co[2]))
     
-    close_class()
-
-    # write the normals
-    write_indented("NormalBinding PER_VERTEX")
-    open_class("NormalArray Vec3Array %d" % len(modified_mesh.vertices))
-    for vertex in modified_mesh.vertices:
-        write_indented("%f %f %f" % (vertex.normal[0], vertex.normal[1], vertex.normal[2]));
-
-    close_class()
-
-    # bind the color to the mesh
-    write_indented("ColorBinding OVERALL")
-    open_class("ColorArray Vec4Array 1")
-    write_indented("1.0 1.0 1.0 1.0")
-    close_class()
-
-
-    # write the primitives
-    num_tris = 0
-    num_quads = 0
-    num_primitives = 0
-    for face in modified_mesh.faces:
-        if len(face.vertices) == 3:
-            num_tris += 1
-        elif len(face.vertices) == 4:
-            num_quads += 1
-    if num_tris > 0:
-        num_primitives += 1
-    if num_quads > 0:
-        num_primitives += 1
-    open_class("PrimitiveSets %d" % num_primitives)
-
-    # draw all the triangle faces
-    if num_tris > 0:
-        open_class("DrawElementsUShort TRIANGLES %d" % num_tris)
-        for face in modified_mesh.faces:
-            if len(face.vertices) == 3:
-                write_indented("%d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2]))
-        close_class()
-    # draw all the quad faces
-    if num_quads > 0:
-        open_class("DrawElementsUShort QUADS %d" % num_quads)
-        for face in modified_mesh.faces:
-            if len(face.vertices) == 4:
-                write_indented("%d %d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2], face.vertices[3]))
         close_class()
 
-    close_class()
-        
-    close_class()
+        # write the normals
+        write_indented("NormalBinding PER_VERTEX")
+        open_class("NormalArray Vec3Array %d" % len(modified_mesh.vertices))
+        for vertex in modified_mesh.vertices:
+            write_indented("%f %f %f" % (vertex.normal[0], vertex.normal[1], vertex.normal[2]));
+
+        close_class()
+        close_class()
+        material_index += 1
+
     close_class()
 
 

@@ -261,7 +261,6 @@ def write_mesh(m):
 
 
         close_class()
-        close_class()
         material_index += 1
 
     close_class()

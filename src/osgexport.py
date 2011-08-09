@@ -144,9 +144,10 @@ def write_mesh(m):
             image_texture = material_slot.material.active_texture
             image = image_texture.image
             filename = os.path.join(os.path.dirname(filepath), os.path.basename(filepath).split(".")[0] + "-" + os.path.basename(image.filepath).split(".")[0] + ".png");
-            original_format = image.file_format
-            image.file_format = 'PNG'
+            original_format = current_scene.render.file_format
+            current_scene.render.file_format = 'PNG'
             image.save_render(filename, current_scene)
+            current_scene.render.file_format = original_format
             
             open_class("textureUnit 0")
             write_indented("GL_TEXTURE_2D ON")

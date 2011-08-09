@@ -300,12 +300,9 @@ def write_scene(s):
     write_indented("name \"%s\"" % s.name)
 
     num_objects = 0
-    if only_selected:
-        for obj_base in s.object_bases:
-            if obj_base.select:
-                num_objects += 1
-    else:
-        num_objects = len(s.object_bases)
+    for obj_base in s.object_bases:
+        if (not only_selected or obj_base.select) and obj_base.object.type in ['MESH', 'LAMP']:
+            num_objects += 1
     
     
     write_indented("num_children %d" % num_objects)

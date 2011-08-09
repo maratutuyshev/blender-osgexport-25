@@ -1,4 +1,5 @@
 import bpy
+import os
 import sys
 import math
 import mathutils
@@ -104,13 +105,15 @@ def write_mesh(m):
         # write the material
         open_class("StateSet")
 
+        write_indented("GL_BLEND ON")
         open_class("Material")
         write_indented("name \"%s\"" % material_slot.name)
+
         
         write_indented("ColorMode OFF")
-        write_indented("ambientColor %f %f %f %f" % (current_scene.world.ambient_color[0], 
-                                                     current_scene.world.ambient_color[1], 
-                                                     current_scene.world.ambient_color[2], 
+        write_indented("ambientColor %f %f %f %f" % (material_slot.material.ambient, 
+                                                     material_slot.material.ambient, 
+                                                     material_slot.material.ambient, 
                                                      material_slot.material.ambient))
 
         d = material_slot.material.diffuse_color
@@ -119,15 +122,15 @@ def write_mesh(m):
             d[1] *= m.color[1]
             d[2] *= m.color[2]
 
-        write_indented("diffuseColor %f %f %f %f" % (d[0],
-                                                     d[1],
-                                                     d[2],
-                                                     material_slot.material.diffuse_intensity))
+        write_indented("diffuseColor %f %f %f %f" % (d[0] * material_slot.material.diffuse_intensity,
+                                                     d[1] * material_slot.material.diffuse_intensity,
+                                                     d[2] * material_slot.material.diffuse_intensity,
+                                                     1))
         
-        write_indented("specularColor %f %f %f %f" % (material_slot.material.specular_color[0] * material_slot.material.specular_intensity,
-                                                     material_slot.material.specular_color[1] * material_slot.material.specular_intensity,
-                                                     material_slot.material.specular_color[2] * material_slot.material.specular_intensity,
-                                                     material_slot.material.specular_intensity))
+        write_indented("specularColor %f %f %f %f" % (0,
+                                                     0,
+                                                     0,
+                                                     1))
     
         write_indented("emissionColor %f %f %f %f" % (material_slot.material.emit, material_slot.material.emit, material_slot.material.emit, material_slot.material.emit))
         # Hardness is a value from 1 - 511
@@ -135,6 +138,41 @@ def write_mesh(m):
         write_indented("shininess %f" % ((material_slot.material.specular_hardness - 1.0) / 51.0))
     
         close_class()
+        
+        if material_slot.material.active_texture != None and material_slot.material.active_texture.type == 'IMAGE' and material_slot.material.active_texture.image != None:
+            # render the texture to a bitmap
+            image_texture = material_slot.material.active_texture
+            image = image_texture.image
+            filename = os.path.join(os.path.dirname(filepath), os.path.basename(filepath).split(".")[0] + "-" + os.path.basename(image.filepath).split(".")[0] + ".png");
+            original_format = image.file_format
+            image.file_format = 'PNG'
+            image.save_render(filename, current_scene)
+            
+            open_class("textureUnit 0")
+            write_indented("GL_TEXTURE_2D ON")
+            open_class("Texture2D")
+            write_indented("name \"%s\"" % (image.name))
+            write_indented("file \"%s\"" % (filename))
+            if image_texture.repeat_x > 1:
+                write_indented("wrap_s REPEAT")
+            else:
+                write_indented("wrap_s CLAMP")
+            if image_texture.repeat_y > 1:
+                write_indented("wrap_t REPEAT")
+            else:
+                write_indented("wrap_t CLAMP")
+
+            write_indented("wrap_r REPEAT")
+            write_indented("min_filter LINEAR_MIPMAP_LINEAR")
+            write_indented("mag_filter LINEAR")
+            write_indented("internalFormatMode USE_IMAGE_DATA_FORMAT")
+            write_indented("subloadMode OFF")
+            write_indented("resizeNonPowerOfTwo TRUE")
+
+
+            close_class()
+            close_class()
+
 
         close_class()
         # write the primitives
@@ -153,18 +191,48 @@ def write_mesh(m):
         open_class("PrimitiveSets %d" % num_primitives)
 
         # draw all the triangle faces
+        uv_coords = []
+        uv_idx = 0
+        # write the texture coordinates
+        texture_face_layer = modified_mesh.uv_textures.active
+        if texture_face_layer != None:
+            for texture_face in texture_face_layer.data:
+                for vertex in texture_face.uv:
+                    uv_coords.append((vertex[0], vertex[1]))
+
+        uv_packed = []
+        for vertex in modified_mesh.vertices:
+            uv_packed.append((0, 0))
+
         if num_tris > 0:
-            open_class("DrawElementsUShort TRIANGLES %d" % num_tris)
+            open_class("DrawElementsUShort TRIANGLES %d" % (num_tris * 3))
             for face in modified_mesh.faces:
                 if len(face.vertices) == 3 and face.material_index == material_index:
                     write_indented("%d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2]))
+                    if len(uv_coords) > 0:
+                        uv_packed[face.vertices[0]] = uv_coords[uv_idx]
+                        uv_idx+=1
+                        uv_packed[face.vertices[1]] = uv_coords[uv_idx]
+                        uv_idx+=1
+                        uv_packed[face.vertices[2]] = uv_coords[uv_idx]
+                        uv_idx+=1
+
             close_class()
         # draw all the quad faces
         if num_quads > 0:
-            open_class("DrawElementsUShort QUADS %d" % num_quads)
+            open_class("DrawElementsUShort QUADS %d" % (num_quads * 4))
             for face in modified_mesh.faces:
                 if len(face.vertices) == 4 and face.material_index == material_index:
                     write_indented("%d %d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2], face.vertices[3]))
+                    if len(uv_coords) > 0:
+                        uv_packed[face.vertices[0]] = uv_coords[uv_idx]
+                        uv_idx+=1
+                        uv_packed[face.vertices[1]] = uv_coords[uv_idx]
+                        uv_idx+=1
+                        uv_packed[face.vertices[2]] = uv_coords[uv_idx]
+                        uv_idx+=1
+                        uv_packed[face.vertices[3]] = uv_coords[uv_idx]
+                        uv_idx+=1
             close_class()
 
         close_class()
@@ -181,6 +249,15 @@ def write_mesh(m):
         open_class("NormalArray Vec3Array %d" % len(modified_mesh.vertices))
         for vertex in modified_mesh.vertices:
             write_indented("%f %f %f" % (vertex.normal[0], vertex.normal[1], vertex.normal[2]));
+
+        close_class()
+
+        if len(uv_packed) > 0:
+            open_class("TexCoordArray 0 Vec2Array %d" % len(uv_packed))
+            for uv in uv_packed:
+                write_indented("%f %f" % (uv[0], uv[1]));
+            close_class()
+
 
         close_class()
         close_class()
@@ -238,12 +315,13 @@ def write_scene(s):
 
     close_class()
 
-def write_osg(context, filepath, option_export_animations, option_only_selected, option_apply_modifiers):
-    global indent_level, export_file, export_animations, only_selected, apply_modifiers
+def write_osg(context, option_filepath, option_export_animations, option_only_selected, option_apply_modifiers):
+    global indent_level, filepath, export_file, export_animations, only_selected, apply_modifiers
     indent_level = 0
     only_selected = option_only_selected
     export_animations = option_export_animations
     apply_modifiers = option_apply_modifiers
+    filepath = option_filepath
 
     print("export model to osg... " + filepath)
     export_file = open(filepath, 'w')

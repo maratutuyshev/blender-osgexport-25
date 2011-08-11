@@ -268,7 +268,6 @@ def write_mesh(m):
 def write_delta_matrix(o):
     open_class("Matrix")
     m = o.matrix_local.copy()
-    m.invert()
     write_indented("%f %f %f %f" % (m[0][0], m[0][1], m[0][2], m[0][3]))
     write_indented("%f %f %f %f" % (m[1][0], m[1][1], m[1][2], m[1][3]))
     write_indented("%f %f %f %f" % (m[2][0], m[2][1], m[2][2], m[2][3]))

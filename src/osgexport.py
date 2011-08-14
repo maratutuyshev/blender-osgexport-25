@@ -69,7 +69,7 @@ def write_lamp(l):
         v.rotate(l.rotation_euler)
         write_indented("direction %f %f %f" % (v[0], v[1], v[2]))
         write_indented("constant_attenuation %f" % lamp.distance)
-        write_indented("linear_attenuation %f" % lamp.linear_attenuation)
+        write_indented("linear_attenuation %f" % lamp.distance)
         write_indented("quadratic_attenuation %f" % lamp.quadratic_attenuation)
         write_indented("spot_exponent %f" % lamp.spot_blend)
         write_indented("spot_cutoff %f" % math.degrees(lamp.spot_size))
@@ -177,14 +177,29 @@ def write_mesh(m):
 
         close_class()
         # write the primitives
+        vertices = []
         num_tris = 0
         num_quads = 0
-        num_primitives = 0
+        # first do triangles
         for face in modified_mesh.faces:
             if len(face.vertices) == 3 and face.material_index == material_index:
+                vertices.append(modified_mesh.vertices[face.vertices[0]])
+                vertices.append(modified_mesh.vertices[face.vertices[1]])
+                vertices.append(modified_mesh.vertices[face.vertices[2]])
                 num_tris += 1
-            elif len(face.vertices) == 4 and face.material_index == material_index:
+
+        # then do quads
+        for face in modified_mesh.faces:
+            if len(face.vertices) == 4 and face.material_index == material_index:
+                vertices.append(modified_mesh.vertices[face.vertices[0]])
+                vertices.append(modified_mesh.vertices[face.vertices[1]])
+                vertices.append(modified_mesh.vertices[face.vertices[2]])
+                vertices.append(modified_mesh.vertices[face.vertices[3]])
                 num_quads += 1
+
+
+        num_primitives = 0
+
         if num_tris > 0:
             num_primitives += 1
         if num_quads > 0:
@@ -201,22 +216,13 @@ def write_mesh(m):
                 for vertex in texture_face.uv:
                     uv_coords.append((vertex[0], vertex[1]))
 
-        uv_packed = []
-        for vertex in modified_mesh.vertices:
-            uv_packed.append((0, 0))
-
+        vertex_index = 0
         if num_tris > 0:
             open_class("DrawElementsUShort TRIANGLES %d" % (num_tris * 3))
             for face in modified_mesh.faces:
                 if len(face.vertices) == 3 and face.material_index == material_index:
-                    write_indented("%d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2]))
-                    if len(uv_coords) > 0:
-                        uv_packed[face.vertices[0]] = uv_coords[uv_idx]
-                        uv_idx+=1
-                        uv_packed[face.vertices[1]] = uv_coords[uv_idx]
-                        uv_idx+=1
-                        uv_packed[face.vertices[2]] = uv_coords[uv_idx]
-                        uv_idx+=1
+                    write_indented("%d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2))
+                    vertex_index += 3
 
             close_class()
         # draw all the quad faces
@@ -224,38 +230,30 @@ def write_mesh(m):
             open_class("DrawElementsUShort QUADS %d" % (num_quads * 4))
             for face in modified_mesh.faces:
                 if len(face.vertices) == 4 and face.material_index == material_index:
-                    write_indented("%d %d %d %d" % (face.vertices[0], face.vertices[1], face.vertices[2], face.vertices[3]))
-                    if len(uv_coords) > 0:
-                        uv_packed[face.vertices[0]] = uv_coords[uv_idx]
-                        uv_idx+=1
-                        uv_packed[face.vertices[1]] = uv_coords[uv_idx]
-                        uv_idx+=1
-                        uv_packed[face.vertices[2]] = uv_coords[uv_idx]
-                        uv_idx+=1
-                        uv_packed[face.vertices[3]] = uv_coords[uv_idx]
-                        uv_idx+=1
+                    write_indented("%d %d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2, vertex_index + 3))
+                    vertex_index += 4
             close_class()
 
         close_class()
 
         # write the vertices
-        open_class("VertexArray Vec3Array %d" % len(modified_mesh.vertices))
-        for vertex in modified_mesh.vertices:
+        open_class("VertexArray Vec3Array %d" % len(vertices))
+        for vertex in vertices:
             write_indented("%f %f %f" % (vertex.co[0], vertex.co[1], vertex.co[2]))
     
         close_class()
 
         # write the normals
         write_indented("NormalBinding PER_VERTEX")
-        open_class("NormalArray Vec3Array %d" % len(modified_mesh.vertices))
-        for vertex in modified_mesh.vertices:
+        open_class("NormalArray Vec3Array %d" % len(vertices))
+        for vertex in vertices:
             write_indented("%f %f %f" % (vertex.normal[0], vertex.normal[1], vertex.normal[2]));
 
         close_class()
 
-        if len(uv_packed) > 0:
-            open_class("TexCoordArray 0 Vec2Array %d" % len(uv_packed))
-            for uv in uv_packed:
+        if len(uv_coords) > 0:
+            open_class("TexCoordArray 0 Vec2Array %d" % len(uv_coords))
+            for uv in uv_coords:
                 write_indented("%f %f" % (uv[0], uv[1]));
             close_class()
 

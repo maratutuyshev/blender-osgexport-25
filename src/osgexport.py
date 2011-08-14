@@ -207,31 +207,41 @@ def write_mesh(m):
         open_class("PrimitiveSets %d" % num_primitives)
 
         # draw all the triangle faces
-        uv_coords = []
-        uv_idx = 0
+        uv_coords = {} 
         # write the texture coordinates
         texture_face_layer = modified_mesh.uv_textures.active
         if texture_face_layer != None:
-            for texture_face in texture_face_layer.data:
+            for face_index, texture_face in enumerate(texture_face_layer.data):
+                uv_coords[face_index] = []
                 for vertex in texture_face.uv:
-                    uv_coords.append((vertex[0], vertex[1]))
+                    uv_coords[face_index].append((vertex[0], vertex[1]))
 
         vertex_index = 0
+        uv_reordered = []
         if num_tris > 0:
             open_class("DrawElementsUShort TRIANGLES %d" % (num_tris * 3))
-            for face in modified_mesh.faces:
+            for face_index, face in enumerate(modified_mesh.faces):
                 if len(face.vertices) == 3 and face.material_index == material_index:
                     write_indented("%d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2))
                     vertex_index += 3
+                    if len(uv_coords) > 0:
+                        uv_reordered.append(uv_coords[face_index][0])
+                        uv_reordered.append(uv_coords[face_index][1])
+                        uv_reordered.append(uv_coords[face_index][2])
 
             close_class()
         # draw all the quad faces
         if num_quads > 0:
             open_class("DrawElementsUShort QUADS %d" % (num_quads * 4))
-            for face in modified_mesh.faces:
+            for face_index, face in enumerate(modified_mesh.faces):
                 if len(face.vertices) == 4 and face.material_index == material_index:
                     write_indented("%d %d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2, vertex_index + 3))
                     vertex_index += 4
+                    if len(uv_coords) > 0:
+                        uv_reordered.append(uv_coords[face_index][0])
+                        uv_reordered.append(uv_coords[face_index][1])
+                        uv_reordered.append(uv_coords[face_index][2])
+                        uv_reordered.append(uv_coords[face_index][3])
             close_class()
 
         close_class()
@@ -251,9 +261,11 @@ def write_mesh(m):
 
         close_class()
 
-        if len(uv_coords) > 0:
-            open_class("TexCoordArray 0 Vec2Array %d" % len(uv_coords))
-            for uv in uv_coords:
+        if len(uv_reordered) > 0:
+            open_class("TexCoordArray 0 Vec2Array %d" % len(uv_reordered))
+
+
+            for uv in uv_reordered:
                 write_indented("%f %f" % (uv[0], uv[1]));
             close_class()
 

@@ -2,7 +2,7 @@ bl_info = {
     "name": "Open Scene Graph Model Format (.osg)",
     "author": "Damyon Wiese",
     "version": (2, 1, 2),
-    "blender": (2, 5, 9),
+    "blender": (2, 5, 8),
     "api": 37702,
     "location": "File > Export > OpenSceneGraph (.osg)",
     "description": "Export OSG Model Format (.osg)",

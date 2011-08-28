@@ -501,10 +501,24 @@ def get_pose_bone_by_name(name):
     return None
 
 def get_bone_from_path(path):
-    return re.search("bones\[\"([^\"]*)\"\]", path).group(1)
+    result = re.search("bones\[\"([^\"]*)\"\]", path)
+    if result != None:
+        return result.group(1)
+    print("Could not get bone from path: %s" % path);
+    return None
 
 def get_property_from_path(path):
-    return re.search("\.([^.]*)$", path).group(1)
+    result = re.search("\.([^.]*)$", path)
+    if result != None:
+        return result.group(1)
+    print("Could not get property from path: %s" % path);
+    return None
+
+def get_action_fcurve(action, path, array_index):
+    for fcurve in action.fcurves:
+        if fcurve.data_path == path and fcurve.array_index == array_index:
+            return fcurve
+    return None
 
 def write_actions(actions):
     global current_scene
@@ -526,6 +540,45 @@ def write_actions(actions):
                     channels[fcurve.data_path][keyframe.co[0]] = {}
                 channels[fcurve.data_path][keyframe.co[0]][fcurve.array_index] = keyframe.co[1]
 
+        # fix any "holes" ie in blender we can animate on the x channel only - in this case we should either drop the animation or evaluate the curve at the hole
+        for path in iter(channels):
+            channel = channels[path]
+            bone_name = get_bone_from_path(path)
+            bone_property = get_property_from_path(path)
+            channel_skipped = False
+
+            if bone_name != None and bone_property != None:
+                num_properties = 0
+                if bone_property.lower() == 'scale':
+                    num_properties = 3
+                elif bone_property.lower() == 'location':
+                    num_properties = 3
+                elif bone_property.lower() == 'rotation_euler':
+                    pose_bone = get_pose_bone_by_name(bone_name)
+                    if 'Z' in pose_bone.rotation_mode:
+                        num_properties = 3
+                elif bone_property.lower() == 'rotation_quaternion':
+                    pose_bone = get_pose_bone_by_name(bone_name)
+                    if pose_bone.rotation_mode == 'QUATERNION':
+                        num_properties = 4
+                if num_properties > 0:
+                    for keyframe in channels[path].keys():
+                        for i in range(0, num_properties):
+                            if not i in channels[path][keyframe]:
+                                fcurve = get_action_fcurve(action, path, i)
+                                if fcurve != None:
+                                    channels[path][keyframe][i] = fcurve.evaluate(keyframe)
+                                else:
+                                    # no fcurve exists for this property
+                                    # we will have to skip the entire action
+                                    channels.remove(path)
+                                    channel_skipped = True
+                        if channel_skipped:
+                            break
+                    if channel_skipped:
+                        break
+
+
         write_indented("num_channels %d" % (len(channels)))
         
         for path in iter(channels):
@@ -533,84 +586,86 @@ def write_actions(actions):
             bone_name = get_bone_from_path(path)
             bone_property = get_property_from_path(path)
 
-            if bone_property.lower() == 'scale':
-                open_class("Vec3LinearChannel")
-                write_indented("name \"scale\"")
-                write_indented("target \"%s\"" % (bone_name))
-                open_class("Keyframes %d" % (len(channel)))
-                for timestamp in sorted(channel.keys()):
-                    write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
-
-                close_class()
-                close_class()
-            elif bone_property.lower() == 'location':
-                open_class("Vec3LinearChannel")
-                write_indented("name \"translate\"")
-                write_indented("target \"%s\"" % (bone_name))
-                open_class("Keyframes %d" % (len(channel)))
-                for timestamp in sorted(channel.keys()):
-                    # note the axis translation
-                    write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
-
-                close_class()
-                close_class()
-            elif bone_property.lower() == 'rotation_euler':
-                # first - tweak the axis
-                # then convert to quaternion
-                pose_bone = get_pose_bone_by_name(bone_name)
-                if 'Z' in pose_bone.rotation_mode:
-                    open_class("QuatSphericalLinearChannel")
-                    write_indented("name \"quaternion\"")
+            if bone_name != None and bone_property != None:
+                if bone_property.lower() == 'scale':
+                    open_class("Vec3LinearChannel")
+                    write_indented("name \"scale\"")
                     write_indented("target \"%s\"" % (bone_name))
                     open_class("Keyframes %d" % (len(channel)))
                     for timestamp in sorted(channel.keys()):
-                        euler = mathutils.Euler()
-                        euler.order = pose_bone.rotation_mode
-                        euler.x = channel[timestamp][0]
-                        euler.y = channel[timestamp][1]
-                        euler.z = channel[timestamp][2]
-
-                        # reorder euler
-                        t = euler.x
-                        euler.x = euler.y
-                        euler.y = -t
-
-                        quat = euler.to_quaternion()
-
-                        # quat.rotate(mathutils.Matrix.Rotation(math.radians(180), 4, 'Z'))
-                        # quat.
-                        write_indented("key %f %f %f %f %f" % (timestamp/current_scene.render.fps, quat.x, quat.y, quat.z, quat.w))
+                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
 
                     close_class()
                     close_class()
-            elif bone_property.lower() == 'rotation_quaternion':
-                pose_bone = get_pose_bone_by_name(bone_name)
-                if pose_bone.rotation_mode == 'QUATERNION':
-                    open_class("QuatSphericalLinearChannel")
-                    write_indented("name \"quaternion\"")
+                elif bone_property.lower() == 'location':
+                    open_class("Vec3LinearChannel")
+                    write_indented("name \"translate\"")
                     write_indented("target \"%s\"" % (bone_name))
                     open_class("Keyframes %d" % (len(channel)))
                     for timestamp in sorted(channel.keys()):
-                        quat = mathutils.Quaternion()
-                        quat.w = channel[timestamp][0]
-                        quat.x = channel[timestamp][1]
-                        quat.y = channel[timestamp][2]
-                        quat.z = channel[timestamp][3]
-
-                        # convert to euler fix the axis and then back to quat
-                        euler = quat.to_euler('XYZ')
-                        t = euler.x
-                        euler.x = euler.y
-                        euler.y = -t
-                        quat = euler.to_quaternion()
-
-                        # quat.rotate(mathutils.Matrix.Rotation(math.radians(180), 4, 'Z'))
-                        # quat.
-                        write_indented("key %f %f %f %f %f" % (timestamp/current_scene.render.fps, quat.x, quat.y, quat.z, quat.w))
+                        # note the axis translation
+                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
 
                     close_class()
                     close_class()
+                elif bone_property.lower() == 'rotation_euler':
+                    # first - tweak the axis
+                    # then convert to quaternion
+                    pose_bone = get_pose_bone_by_name(bone_name)
+                    if 'Z' in pose_bone.rotation_mode:
+                        open_class("QuatSphericalLinearChannel")
+                        write_indented("name \"quaternion\"")
+                        write_indented("target \"%s\"" % (bone_name))
+                        open_class("Keyframes %d" % (len(channel)))
+                        for timestamp in sorted(channel.keys()):
+                            euler = mathutils.Euler()
+                            euler.order = pose_bone.rotation_mode
+                            euler.x = channel[timestamp][0]
+                            euler.y = channel[timestamp][1]
+                            euler.z = channel[timestamp][2]
 
+                            # reorder euler
+                            t = euler.x
+                            euler.x = euler.y
+                            euler.y = -t
+
+                            quat = euler.to_quaternion()
+
+                            # quat.rotate(mathutils.Matrix.Rotation(math.radians(180), 4, 'Z'))
+                            # quat.
+                            write_indented("key %f %f %f %f %f" % (timestamp/current_scene.render.fps, quat.x, quat.y, quat.z, quat.w))
+
+                        close_class()
+                        close_class()
+                elif bone_property.lower() == 'rotation_quaternion':
+                    pose_bone = get_pose_bone_by_name(bone_name)
+                    if pose_bone.rotation_mode == 'QUATERNION':
+                        open_class("QuatSphericalLinearChannel")
+                        write_indented("name \"quaternion\"")
+                        write_indented("target \"%s\"" % (bone_name))
+                        open_class("Keyframes %d" % (len(channel)))
+                        for timestamp in sorted(channel.keys()):
+                            quat = mathutils.Quaternion()
+                            quat.w = channel[timestamp][0]
+                            quat.x = channel[timestamp][1]
+                            quat.y = channel[timestamp][2]
+                            quat.z = channel[timestamp][3]
+
+                            # convert to euler fix the axis and then back to quat
+                            euler = quat.to_euler('XYZ')
+                            t = euler.x
+                            euler.x = euler.y
+                            euler.y = -t
+                            quat = euler.to_quaternion()
+
+                            # quat.rotate(mathutils.Matrix.Rotation(math.radians(180), 4, 'Z'))
+                            # quat.
+                            write_indented("key %f %f %f %f %f" % (timestamp/current_scene.render.fps, quat.x, quat.y, quat.z, quat.w))
+
+                        close_class()
+                        close_class()
+                # end if bone_name and bone_property
+            # end for path in channels
         close_class()
 
     close_class()

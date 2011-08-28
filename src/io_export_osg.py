@@ -162,7 +162,9 @@ def write_mesh(m):
         # write the material
         open_class("StateSet")
 
-        write_indented("GL_BLEND ON")
+        if material_slot.material.alpha < 1.0:
+            write_indented("GL_BLEND ON")
+            write_indented("rendering_hint TRANSPARENT_BIN")
         open_class("Material")
         write_indented("name \"%s\"" % material_slot.name)
 

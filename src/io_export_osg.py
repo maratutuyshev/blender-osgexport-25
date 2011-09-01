@@ -99,8 +99,10 @@ def write_lamp(l):
     close_class()
 
     
-def write_mesh(m):
-    global current_scene, export_animations
+def write_mesh(m, recursive, animation):
+    global current_scene, export_animations, orphan_meshes
+
+    orphan_meshes.remove(m)
     open_class("Geode")
     write_indented("name \"%s\"" % m.name)
     # count the drawables
@@ -115,7 +117,7 @@ def write_mesh(m):
     num_quads = 0
     # first do triangles
     for face in modified_mesh.faces:
-        if len(face.vertices) == 3 and face.material_index == material_index:
+        if len(face.vertices) == 3:
             vertices.append(modified_mesh.vertices[face.vertices[0]])
             vertices.append(modified_mesh.vertices[face.vertices[1]])
             vertices.append(modified_mesh.vertices[face.vertices[2]])
@@ -123,14 +125,14 @@ def write_mesh(m):
 
     # then do quads
     for face in modified_mesh.faces:
-        if len(face.vertices) == 4 and face.material_index == material_index:
+        if len(face.vertices) == 4:
             vertices.append(modified_mesh.vertices[face.vertices[0]])
             vertices.append(modified_mesh.vertices[face.vertices[1]])
             vertices.append(modified_mesh.vertices[face.vertices[2]])
             vertices.append(modified_mesh.vertices[face.vertices[3]])
             num_quads += 1
 
-    if export_animations:
+    if animation and export_animations:
         # TODO - wrap the geometry in a rig geometry
         write_indented("num_drawables 1")
         open_class("osgAnimation::RigGeometry")
@@ -151,10 +153,8 @@ def write_mesh(m):
             close_class()
 
 
-        write_indented("num_drawables %d" % len(m.material_slots))
-    else:
-        write_indented("num_drawables %d" % len(m.material_slots))
 
+    write_indented("num_drawables %d" % len(m.material_slots))
 
     for material_slot in m.material_slots:
         open_class("Geometry")
@@ -165,6 +165,9 @@ def write_mesh(m):
         if material_slot.material.alpha < 1.0:
             write_indented("GL_BLEND ON")
             write_indented("rendering_hint TRANSPARENT_BIN")
+        else:
+            write_indented("rendering_hint OPAQUE_BIN")
+
         open_class("Material")
         write_indented("name \"%s\"" % material_slot.name)
 
@@ -265,27 +268,29 @@ def write_mesh(m):
         if num_tris > 0:
             open_class("DrawElementsUShort TRIANGLES %d" % (num_tris * 3))
             for face_index, face in enumerate(modified_mesh.faces):
-                if len(face.vertices) == 3 and face.material_index == material_index:
-                    write_indented("%d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2))
+                if len(face.vertices) == 3:
+                    if face.material_index == material_index:
+                        write_indented("%d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2))
+                        if len(uv_coords) > 0:
+                            uv_reordered.append(uv_coords[face_index][0])
+                            uv_reordered.append(uv_coords[face_index][1])
+                            uv_reordered.append(uv_coords[face_index][2])
                     vertex_index += 3
-                    if len(uv_coords) > 0:
-                        uv_reordered.append(uv_coords[face_index][0])
-                        uv_reordered.append(uv_coords[face_index][1])
-                        uv_reordered.append(uv_coords[face_index][2])
 
             close_class()
         # draw all the quad faces
         if num_quads > 0:
             open_class("DrawElementsUShort QUADS %d" % (num_quads * 4))
             for face_index, face in enumerate(modified_mesh.faces):
-                if len(face.vertices) == 4 and face.material_index == material_index:
-                    write_indented("%d %d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2, vertex_index + 3))
+                if len(face.vertices) == 4:
+                    if face.material_index == material_index:
+                        write_indented("%d %d %d %d" % (vertex_index, vertex_index + 1, vertex_index + 2, vertex_index + 3))
+                        if len(uv_coords) > 0:
+                            uv_reordered.append(uv_coords[face_index][0])
+                            uv_reordered.append(uv_coords[face_index][1])
+                            uv_reordered.append(uv_coords[face_index][2])
+                            uv_reordered.append(uv_coords[face_index][3])
                     vertex_index += 4
-                    if len(uv_coords) > 0:
-                        uv_reordered.append(uv_coords[face_index][0])
-                        uv_reordered.append(uv_coords[face_index][1])
-                        uv_reordered.append(uv_coords[face_index][2])
-                        uv_reordered.append(uv_coords[face_index][3])
             close_class()
 
         close_class()
@@ -317,11 +322,22 @@ def write_mesh(m):
         close_class()
         material_index += 1
     
-    if export_animations:
+    if animation and export_animations:
         # TODO - wrap the geometry in a rig geometry
         close_class()
 
     close_class()
+
+    if recursive:
+        child_meshes = find_mesh_child_meshes(m)
+        for child_mesh in child_meshes:
+            
+            open_class("MatrixTransform")
+            m = child_mesh.matrix_local.copy()
+
+            write_matrix(m)
+            write_mesh(child_mesh, True, animation)
+            close_class()
 
 def write_identity_matrix():
     open_class("Matrix")
@@ -346,7 +362,40 @@ def write_delta_matrix(o):
     close_class()
     write_indented("num_children 1")
 
+def find_armature_child_meshes(armature):
+    global current_scene
+    child_meshes = []
+    for o in current_scene.objects:
+        if o.type == 'MESH':
+            for m in o.modifiers:
+                if m.type == "ARMATURE":
+                    if m.object == armature:
+                        child_meshes.append(o)
+
+    return child_meshes
+
+def find_mesh_child_meshes(mesh):
+    global current_scene
+    child_meshes = []
+    for o in current_scene.objects:
+        if o.type == 'MESH' and o.parent == mesh:
+            child_meshes.append(o)
+
+    return child_meshes
+
+def find_bone_child_meshes(bone):
+    global current_scene
+    child_meshes = []
+    for o in current_scene.objects:
+        if o.type == 'MESH' and o.parent_type == 'BONE' and o.parent_bone == bone.name:
+            child_meshes.append(o)
+
+    return child_meshes
+
+
 def write_bone(bone, armature_matrix):
+    print("Write bone: %s" % (bone.name))
+    print("Write connected: %s" % str(bone.bone.use_connect))
     open_class("osgAnimation::Bone")
     write_indented("name \"%s\"" % (bone.name))
 
@@ -366,6 +415,10 @@ def write_bone(bone, armature_matrix):
 
     rotate = True
     bone_matrix = bone.matrix.copy()
+    bone_rotation = bone.rotation_quaternion
+    # do something with bone rotation
+    # create a test case
+    bone_matrix = bone_matrix * bone_rotation.to_matrix().to_4x4()
     if rotate:
         bone_matrix = bone_matrix * mathutils.Matrix.Rotation(math.radians(90), 4, 'Z')
 
@@ -409,13 +462,36 @@ def write_bone(bone, armature_matrix):
     close_class() 
 
 
+    mesh_children = find_bone_child_meshes(bone)
 
-
-    write_indented("num_children %d" % (len(bone.children)))
+    write_indented("num_children %d" % (len(bone.children) + len(mesh_children)))
     for child in bone.children:
         write_bone(child, armature_matrix)
 
+
+    for child in mesh_children:
+
+        open_class("MatrixTransform")
+        m = inverse_bind_matrix * child.matrix_local.copy()
+
+        write_matrix(m)
+        write_mesh(child, True, False)
+        close_class()
+
+
     close_class()
+
+def write_matrix(m):
+    open_class("Matrix")
+    write_indented("%f %f %f %f" % (m[0][0], m[0][1], m[0][2], m[0][3]))
+    write_indented("%f %f %f %f" % (m[1][0], m[1][1], m[1][2], m[1][3]))
+    write_indented("%f %f %f %f" % (m[2][0], m[2][1], m[2][2], m[2][3]))
+    write_indented("%f %f %f %f" % (m[3][0], m[3][1], m[3][2], m[3][3]))
+    
+    close_class()
+    write_indented("num_children 1")
+
+
 
 def write_armature(obj):
     armature = obj.data
@@ -435,13 +511,33 @@ def write_armature(obj):
     
     close_class()
 
+    root_bones = []
     # bones
     for bone in obj.pose.bones:
         # only add the root bones
         if bone.parent == None:
-            write_bone(bone, skeleton_matrix)
+            root_bones.append(bone)
 
-    # skeleton is left open so geode can be a child of it
+    # meshes
+    mesh_children = find_armature_child_meshes(obj)
+
+    write_indented("num_children %d" % (len(root_bones) + len(mesh_children)))
+    for bone in root_bones:
+        write_bone(bone, skeleton_matrix)
+
+    for mesh in mesh_children:
+        open_class("MatrixTransform")
+        #if export_animations:
+        #    write_identity_matrix()
+        #else:
+        m = mesh.matrix_local.copy()
+
+        write_matrix(m)
+
+        write_mesh(mesh, False, export_animations)
+        close_class()
+
+    close_class()
 
 def write_object(o):
     global export_animations
@@ -449,25 +545,27 @@ def write_object(o):
     armature = None
 
     if o.type == "MESH":
-        if export_animations:
-            # hunt for an armature modifier
-            for modifier in o.modifiers:
-                if modifier.type == "ARMATURE":
-                    armature = modifier.object
-
-
-        if armature != None:
-            write_armature(armature)
-
-        open_class("MatrixTransform")
-        if export_animations:
-            write_identity_matrix()
-        else:
-            write_delta_matrix(o)
-        write_mesh(o)
-        close_class()
-        if armature != None:
-            close_class()
+        pass
+        #if export_animations:
+        #    # hunt for an armature modifier
+        #    for modifier in o.modifiers:
+        #        if modifier.type == "ARMATURE":
+        #            armature = modifier.object
+#
+#
+#        if armature != None:
+#            write_armature(armature)
+#
+#        open_class("MatrixTransform")
+#        if export_animations:
+#            write_identity_matrix()
+#        else:
+#            write_delta_matrix(o)
+#        print("write skeleton child mesh")
+#        write_mesh(o, False, export_animations)
+#        close_class()
+#        if armature != None:
+#            close_class()
     elif o.type == "CURVE":
         print("Warning: Curve is not supported by openscenegraph exporter. Skipping.\n")
     elif o.type == "SURFACE":
@@ -477,8 +575,7 @@ def write_object(o):
     elif o.type == "FONT":
         print("Warning: Font is not supported by openscenegraph exporter. Skipping.\n")
     elif o.type == "ARMATURE":
-        # Skeletons get exported first
-        pass
+        write_armature(o)
     elif o.type == "LATTICE":
         print("Warning: Lattice is not supported by openscenegraph exporter. Skipping.\n")
     elif o.type == "EMPTY":
@@ -557,11 +654,11 @@ def write_actions(actions):
                     num_properties = 3
                 elif bone_property.lower() == 'rotation_euler':
                     pose_bone = get_pose_bone_by_name(bone_name)
-                    if 'Z' in pose_bone.rotation_mode:
+                    if pose_bone != None and 'Z' in pose_bone.rotation_mode:
                         num_properties = 3
                 elif bone_property.lower() == 'rotation_quaternion':
                     pose_bone = get_pose_bone_by_name(bone_name)
-                    if pose_bone.rotation_mode == 'QUATERNION':
+                    if pose_bone != None and pose_bone.rotation_mode == 'QUATERNION':
                         num_properties = 4
                 if num_properties > 0:
                     for keyframe in channels[path].keys():
@@ -614,7 +711,7 @@ def write_actions(actions):
                     # first - tweak the axis
                     # then convert to quaternion
                     pose_bone = get_pose_bone_by_name(bone_name)
-                    if 'Z' in pose_bone.rotation_mode:
+                    if pose_bone != None and 'Z' in pose_bone.rotation_mode:
                         open_class("QuatSphericalLinearChannel")
                         write_indented("name \"quaternion\"")
                         write_indented("target \"%s\"" % (bone_name))
@@ -641,7 +738,7 @@ def write_actions(actions):
                         close_class()
                 elif bone_property.lower() == 'rotation_quaternion':
                     pose_bone = get_pose_bone_by_name(bone_name)
-                    if pose_bone.rotation_mode == 'QUATERNION':
+                    if pose_bone != None and pose_bone.rotation_mode == 'QUATERNION':
                         open_class("QuatSphericalLinearChannel")
                         write_indented("name \"quaternion\"")
                         write_indented("target \"%s\"" % (bone_name))
@@ -674,8 +771,9 @@ def write_actions(actions):
     close_class()
 
 def write_scene(s):
-    global only_selected, current_scene, export_animations
+    global only_selected, current_scene, export_animations, orphan_meshes
 
+    orphan_meshes = []
     current_scene = s
 
     open_class("Group")
@@ -688,7 +786,11 @@ def write_scene(s):
     for obj_base in s.object_bases:
         if (not only_selected or obj_base.select) and obj_base.object.type in ['MESH', 'LAMP']:
             num_objects += 1
-    
+
+    for m in s.objects:
+        if m.type == 'MESH':
+            orphan_meshes.append(m)
+
     
     write_indented("num_children %d" % num_objects)
     if export_animations:
@@ -697,6 +799,14 @@ def write_scene(s):
     for obj_base in s.object_bases:
         if not only_selected or obj_base.select: 
             write_object(obj_base.object)
+
+    for orphan_mesh in orphan_meshes:
+        print("write orphan child mesh")
+        open_class("MatrixTransform")
+        write_delta_matrix(orphan_mesh)
+        write_mesh(orphan_mesh, False, False)
+        close_class()
+
 
     close_class()
 

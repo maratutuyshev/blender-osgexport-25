@@ -394,8 +394,6 @@ def find_bone_child_meshes(bone):
 
 
 def write_bone(bone, armature_matrix):
-    print("Write bone: %s" % (bone.name))
-    print("Write connected: %s" % str(bone.bone.use_connect))
     open_class("osgAnimation::Bone")
     write_indented("name \"%s\"" % (bone.name))
 
@@ -413,20 +411,40 @@ def write_bone(bone, armature_matrix):
     # else:
     #     matrix_relative = bone.matrix_local.copy()
 
-    rotate = True
+    rotate = False
     bone_matrix = bone.matrix.copy()
     bone_rotation = bone.rotation_quaternion
+
+    euler = bone_rotation.to_euler()
+    # reorder euler
+    #t = euler.x
+    #euler.x = euler.y
+    #euler.y = -t
+
+    bone_rotation = euler.to_quaternion()
     # do something with bone rotation
     # create a test case
-    bone_matrix = bone_matrix * bone_rotation.to_matrix().to_4x4()
-    if rotate:
-        bone_matrix = bone_matrix * mathutils.Matrix.Rotation(math.radians(90), 4, 'Z')
-
+    #bone_matrix = bone_matrix * bone_rotation.to_matrix().to_4x4()
+    #bone_matrix = bone_rotation.to_matrix().to_4x4() * bone_matrix
     if bone.parent:
-        parent_matrix = bone.parent.bone.matrix_local.copy()
+        # candidates here are
+        # parent.matrix
+        # parent.matrix_basis
+        # parent.matrix_channel
+        # parent.bone.matrix_local - no
+        # parent.bone.matrix - 3x3 ?
+        # parent_matrix = bone.parent.bone.matrix_local.copy()
+        # parent_matrix = bone.parent.matrix.copy() strangely close - i think the position was off
+        parent_matrix = bone.parent.matrix.copy()
         if rotate:
             parent_matrix = parent_matrix * mathutils.Matrix.Rotation(math.radians(90), 4, 'Z')
         bone_matrix = parent_matrix.inverted() * bone_matrix
+
+    if rotate:
+        bone_matrix = bone_matrix * mathutils.Matrix.Rotation(math.radians(90), 4, 'Z')
+
+
+
     write_indented("%f %f %f %f" % (bone_matrix[0][0], bone_matrix[0][1], bone_matrix[0][2], bone_matrix[0][3]))
     write_indented("%f %f %f %f" % (bone_matrix[1][0], bone_matrix[1][1], bone_matrix[1][2], bone_matrix[1][3]))
     write_indented("%f %f %f %f" % (bone_matrix[2][0], bone_matrix[2][1], bone_matrix[2][2], bone_matrix[2][3]))
@@ -453,7 +471,9 @@ def write_bone(bone, armature_matrix):
     open_class("InvBindMatrixInSkeletonSpace")
 
     # inverse_bind_matrix = bone.matrix_local.inverted()
-    bind_matrix = bone.matrix.copy() * mathutils.Matrix.Rotation(math.radians(90), 4, 'Z')
+    # bind_matrix = bone.matrix.copy() * bone_rotation.to_matrix().to_4x4() 
+    bind_matrix = bone.matrix.copy() 
+    #bind_matrix = bind_matrix * mathutils.Matrix.Rotation(math.radians(90), 4, 'Z')
     inverse_bind_matrix = bind_matrix.inverted()
     write_indented("%f %f %f %f" % (inverse_bind_matrix[0][0], inverse_bind_matrix[0][1], inverse_bind_matrix[0][2], inverse_bind_matrix[0][3]))
     write_indented("%f %f %f %f" % (inverse_bind_matrix[1][0], inverse_bind_matrix[1][1], inverse_bind_matrix[1][2], inverse_bind_matrix[1][3]))
@@ -494,6 +514,8 @@ def write_matrix(m):
 
 
 def write_armature(obj):
+    original_pose_position = obj.data.pose_position
+    obj.data.pose_position = 'REST'
     armature = obj.data
     open_class("osgAnimation::Skeleton")
     write_indented("name \"%s\"" % (armature.name))
@@ -514,6 +536,9 @@ def write_armature(obj):
     root_bones = []
     # bones
     for bone in obj.pose.bones:
+        m = mathutils.Matrix()
+        m.identity()
+        bone.matrix = m
         # only add the root bones
         if bone.parent == None:
             root_bones.append(bone)
@@ -538,6 +563,7 @@ def write_armature(obj):
         close_class()
 
     close_class()
+    obj.data.pose_position = original_pose_position
 
 def write_object(o):
     global export_animations
@@ -561,7 +587,6 @@ def write_object(o):
 #            write_identity_matrix()
 #        else:
 #            write_delta_matrix(o)
-#        print("write skeleton child mesh")
 #        write_mesh(o, False, export_animations)
 #        close_class()
 #        if armature != None:
@@ -691,8 +716,10 @@ def write_actions(actions):
                     write_indented("name \"scale\"")
                     write_indented("target \"%s\"" % (bone_name))
                     open_class("Keyframes %d" % (len(channel)))
+
                     for timestamp in sorted(channel.keys()):
-                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
+                        #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], channel[timestamp][0], channel[timestamp][2]))
+                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][1], channel[timestamp][2]))
 
                     close_class()
                     close_class()
@@ -703,7 +730,9 @@ def write_actions(actions):
                     open_class("Keyframes %d" % (len(channel)))
                     for timestamp in sorted(channel.keys()):
                         # note the axis translation
-                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
+                        #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
+                        #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], channel[timestamp][0], channel[timestamp][2]))
+                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][1], channel[timestamp][2]))
 
                     close_class()
                     close_class()
@@ -724,9 +753,9 @@ def write_actions(actions):
                             euler.z = channel[timestamp][2]
 
                             # reorder euler
-                            t = euler.x
-                            euler.x = euler.y
-                            euler.y = -t
+                         #   t = euler.x
+                          #  euler.x = euler.y
+                           # euler.y = -t
 
                             quat = euler.to_quaternion()
 
@@ -751,14 +780,14 @@ def write_actions(actions):
                             quat.z = channel[timestamp][3]
 
                             # convert to euler fix the axis and then back to quat
-                            euler = quat.to_euler('XYZ')
-                            t = euler.x
-                            euler.x = euler.y
-                            euler.y = -t
-                            quat = euler.to_quaternion()
+                            #euler = quat.to_euler('XYZ')
+                            #t = euler.x
+                            #euler.x = euler.y
+                            #euler.y = -t
+                            #quat = euler.to_quaternion()
 
-                            # quat.rotate(mathutils.Matrix.Rotation(math.radians(180), 4, 'Z'))
-                            # quat.
+                            # quat.rotate(mathutils.Matrix.Rotation(math.radians(-90), 4, 'Y'))
+
                             write_indented("key %f %f %f %f %f" % (timestamp/current_scene.render.fps, quat.x, quat.y, quat.z, quat.w))
 
                         close_class()
@@ -801,7 +830,6 @@ def write_scene(s):
             write_object(obj_base.object)
 
     for orphan_mesh in orphan_meshes:
-        print("write orphan child mesh")
         open_class("MatrixTransform")
         write_delta_matrix(orphan_mesh)
         write_mesh(orphan_mesh, False, False)

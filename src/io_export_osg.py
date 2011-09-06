@@ -719,7 +719,8 @@ def write_actions(actions):
 
                     for timestamp in sorted(channel.keys()):
                         #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], channel[timestamp][0], channel[timestamp][2]))
-                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][1], channel[timestamp][2]))
+                        # x and z are swapped for scaling a bone
+                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][2], channel[timestamp][1]))
 
                     close_class()
                     close_class()
@@ -807,6 +808,15 @@ def write_scene(s):
 
     open_class("Group")
     write_indented("name \"%s\"" % s.name)
+    open_class("MatrixTransform")
+    m = mathutils.Matrix.Rotation(math.radians(90), 4, 'X')
+    open_class("Matrix")
+    write_indented("%f %f %f %f" % (m[0][0], m[0][1], m[0][2], m[0][3]))
+    write_indented("%f %f %f %f" % (m[1][0], m[1][1], m[1][2], m[1][3]))
+    write_indented("%f %f %f %f" % (m[2][0], m[2][1], m[2][2], m[2][3]))
+    write_indented("%f %f %f %f" % (m[3][0], m[3][1], m[3][2], m[3][3]))
+    
+    close_class()
 
     num_objects = 0
     if export_animations:
@@ -835,6 +845,7 @@ def write_scene(s):
         write_mesh(orphan_mesh, False, False)
         close_class()
 
+    close_class()
 
     close_class()
 

@@ -719,7 +719,6 @@ def write_actions(actions):
 
                     for timestamp in sorted(channel.keys()):
                         #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], channel[timestamp][0], channel[timestamp][2]))
-                        # x and z are swapped for scaling a bone
                         write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][2], channel[timestamp][1]))
 
                     close_class()
@@ -733,7 +732,8 @@ def write_actions(actions):
                         # note the axis translation
                         #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], -channel[timestamp][0], channel[timestamp][2]))
                         #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][1], channel[timestamp][0], channel[timestamp][2]))
-                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][1], channel[timestamp][2]))
+                        #write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][1], channel[timestamp][2]))
+                        write_indented("key %f %f %f %f" % (timestamp/current_scene.render.fps, channel[timestamp][0], channel[timestamp][2], -channel[timestamp][1]))
 
                     close_class()
                     close_class()
